@@ -1,5 +1,4 @@
 require("dotenv").config();
-const { response } = require("express");
 const express = require("express");
 const app = express();
 const _ = require("lodash");
@@ -7,7 +6,6 @@ const bodyParser = require("body-parser");
 const morgan = require("morgan");
 const cors = require("cors");
 const Person = require("./models/person");
-const e = require("express");
 
 let persons = [];
 
@@ -61,15 +59,11 @@ app.delete("/api/persons/:id", (req, res, next) => {
   console.log(req.params.id, "IIDDDDD");
   Person.findByIdAndDelete(req.params.id)
     .then((result) => {
+      console.log(result);
       res.status(204).end();
     })
     .catch((error) => next(error));
 });
-
-const genId = () => {
-  const random = Math.round(Math.random() * 2000);
-  return random;
-};
 
 app.post("/api/persons", (req, res, next) => {
   const body = req.body;
