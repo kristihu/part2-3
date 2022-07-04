@@ -1,3 +1,4 @@
+require("dotenv").config();
 const { response } = require("express");
 const express = require("express");
 const app = express();
@@ -5,33 +6,15 @@ const _ = require("lodash");
 const bodyParser = require("body-parser");
 const morgan = require("morgan");
 const cors = require("cors");
+const Person = require("./models/person");
+const e = require("express");
 
-let persons = [
-  {
-    id: 1,
-    name: "arto hellas",
-    number: "040-32178321",
-  },
-  {
-    id: 2,
-    name: "fuq hellas",
-    number: "040-412412",
-  },
-  {
-    id: 3,
-    name: "jionu hellas",
-    number: "040-535166",
-  },
-  {
-    id: 4,
-    name: "sami hellas",
-    number: "040-6316361",
-  },
-];
+let persons = [];
 
 const total = _.size(persons);
 console.log(total, "total");
 
+app.use(express.static("build"));
 app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -40,35 +23,47 @@ app.use(
   morgan(":method :url :status :res[content-length] - :response-time ms :body")
 );
 
-app.use(express.static("build"));
-
 morgan.token("body", (req) => {
   return JSON.stringify(req.body);
 });
 
 app.get("/api/persons", (req, res) => {
-  console.log(res, "res");
-  res.json(persons);
+  Person.find({}).then((persons) => {
+    res.json(persons);
+  });
 });
 
 app.get("/info", (req, res) => {
-  res.send(
-    `<p>Phonebook has info for ${total} people.</p><p>${new Date()}</p>`
-  );
-  res.end();
+  Person.countDocuments({}).exec((err, count) => {
+    if (err) {
+      res.send(err);
+      return;
+    }
+
+    res.send(`Phone book has info for: ${count} persons date: ${new Date()}`);
+  });
 });
 
-app.get("/api/persons/:id", (req, res) => {
-  const id = Number(req.params.id);
-  const person = persons.find((person) => person.id === id);
-  res.send(`<p>${person.name}  ${person.number}</p>`);
+app.get("/api/persons/:id", (req, res, next) => {
+  console.log(req.params.id);
+  Person.findById(req.params.id)
+    .then((per) => {
+      if (per) {
+        res.json(per);
+      } else {
+        res.status(404).end();
+      }
+    })
+    .catch((error) => next(error));
 });
 
-app.delete("/api/persons/:id", (req, res) => {
-  const id = Number(req.params.id);
-  persons = persons.filter((person) => person.id !== id);
-  console.log("deleted", persons);
-  res.status(204).end();
+app.delete("/api/persons/:id", (req, res, next) => {
+  console.log(req.params.id, "IIDDDDD");
+  Person.findByIdAndDelete(req.params.id)
+    .then((result) => {
+      res.status(204).end();
+    })
+    .catch((error) => next(error));
 });
 
 const genId = () => {
@@ -76,37 +71,61 @@ const genId = () => {
   return random;
 };
 
-app.post("/api/persons", (req, res) => {
+app.post("/api/persons", (req, res, next) => {
   const body = req.body;
-  const checkDuplicates = persons.find((p) => p.name === body.name);
-  if (!checkDuplicates) {
-    const person = {
-      id: genId(),
-      name: body.name,
-      number: body.number,
-    };
-    persons = persons.concat(person);
-    res.json(person);
-  } else {
-    return res.status(400).json({
-      error: "name allready added ",
-    });
-  }
 
-  if (!body.number) {
-    return res.status(400).json({
-      error: "number missing",
-    });
-  }
-  if (!body.name) {
-    return res.status(400).json({
-      error: "name missing",
-    });
-  }
+  const person = new Person({
+    name: body.name,
+    number: body.number,
+  });
+
+  person
+    .save()
+    .then((person) => {
+      res.json(person);
+    })
+    .catch((error) => next(error));
 });
 
-const PORT = process.env.PORT || 3001;
+app.put("/api/persons/:id", (request, response, next) => {
+  const body = request.body;
+
+  const newNumber = { number: body.number };
+
+  Person.findByIdAndUpdate(request.params.id, newNumber, {
+    new: true,
+    runValidators: true,
+    context: "query",
+  })
+    .then((updatedPerson) => {
+      response.json(updatedPerson);
+    })
+    .catch((error) => next(error));
+});
+
+const unknownEndpoint = (request, res) => {
+  res.status(404).send({ error: "unknown endpoint" });
+};
+
+app.use(unknownEndpoint);
+
+const errorHandler = (error, request, res, next) => {
+  console.error(error.message);
+
+  if (error.name === "CastError") {
+    return res.status(400).send({ error: "no such id exists :(" });
+  }
+  if (error.name === "ValidationError") {
+    return res.status(400).send({ error: error });
+  }
+
+  next(error);
+};
+
+app.use(errorHandler);
+
+const PORT = process.env.PORT;
 
 app.listen(PORT, () => {
-  console.log("server running");
+  console.log("server running in", PORT);
 });
